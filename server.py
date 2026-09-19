@@ -347,10 +347,6 @@ class _AppRequestHandler(StreamRequestHandler):
         if length > _MAX_BODY:
             raise HTTPError(413, "Request body too large")
 
-        if headers.get("Expect", "").lower() == "100-continue":
-            self.wfile.write(b"HTTP/1.1 100 Continue\r\n\r\n")
-            self.wfile.flush()
-
         body = self.rfile.read(length)
         if len(body) < length:
             raise _ConnectionClosed

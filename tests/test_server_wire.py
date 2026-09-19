@@ -304,23 +304,6 @@ class TestBodyAndSmuggling(_WireTestCase):
         data = self.BASE_DATA + b"Content-Length: %d\r\n\r\n" % (_MAX_BODY + 1)
         self.assertEqual(self._status(data), 413)
 
-    def test_expect_100_continue_sends_interim(self):
-        """`Expect: 100-continue` yields an interim response before the
-        body."""
-        sock = self._open()
-        sock.sendall(
-            b"POST /ok HTTP/1.1\r\nHost: x\r\nContent-Length: 5\r\n"
-            b"Expect: 100-continue\r\nConnection: close\r\n\r\n"
-        )
-        interim = sock.recv(4096)
-        self.assertTrue(interim.startswith(b"HTTP/1.1 100 Continue\r\n\r\n"))
-        sock.sendall(b"hello")
-        data = interim
-        while chunk := sock.recv(4096):
-            data += chunk
-        self.assertIn(b"HTTP/1.1 200", data)
-        self.assertTrue(data.rstrip().endswith(b"5"))
-
 
 class TestResponseFraming(_WireTestCase):
     """Test outgoing response framing and managed headers."""
