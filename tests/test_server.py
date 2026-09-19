@@ -79,7 +79,8 @@ class TestRegister(unittest.TestCase):
         class Greeter(Handler):
             path = "/greet"
 
-            def __init__(self, greeting: str):
+            def __init__(self, greeting: str, **kwargs):
+                super().__init__(**kwargs)
                 self._greeting = greeting
 
             def get(self, request: Request) -> Response:

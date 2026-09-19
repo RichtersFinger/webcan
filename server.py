@@ -4,7 +4,7 @@ pipeline, and the threaded server.
 
 import logging
 import re
-from collections.abc import Sequence
+from collections.abc import Sequence, Callable
 from http import HTTPStatus
 from pathlib import Path
 from socketserver import ThreadingTCPServer, StreamRequestHandler
@@ -27,7 +27,6 @@ _FALLBACK_CONTENT_TYPE = "application/octet-stream"
 _MAX_REQUEST_LINE = 8192
 _MAX_HEADER_LINE = 8192
 _MAX_HEADERS = 100
-_MAX_BODY = 10 * 1024 * 1024
 """Hard limits guarding against oversized request lines/headers/bodies."""
 
 
@@ -277,7 +276,7 @@ class _AppRequestHandler(StreamRequestHandler):
         if sum(n.lower() == "host" for n in headers) != 1:
             raise HTTPError(400, "Exactly one Host header required")
         keep_alive = self._keep_alive(headers)
-        body = self._read_body(headers)
+        content_length, read_body = self._get_read_body(headers)
 
         if any(
             ord(c) < 0x20 or ord(c) == 0x7F for c in (target + unquote(target))
@@ -290,7 +289,8 @@ class _AppRequestHandler(StreamRequestHandler):
             client_ip=self.client_address[0],
             query_string=split.query,
             headers=headers,
-            body=body,
+            read_body=read_body,
+            content_length=content_length,
         )
         return request, keep_alive
 
@@ -332,25 +332,39 @@ class _AppRequestHandler(StreamRequestHandler):
 
         return Headers(items)
 
-    def _read_body(self, headers: Headers) -> bytes:
+    def _get_read_body(
+        self, headers: Headers
+    ) -> tuple[int, Callable[[int | None], bytes]]:
+        """Returns tuple of request's Content-Length and read body-callback."""
         if headers.get("Transfer-Encoding"):
             raise HTTPError(501, "Transfer-Encoding is not supported")
         length_header = headers.get("Content-Length")
         if length_header is None:
-            return b""
+            return 0, lambda length: b""
         try:
-            length = int(length_header)
+            request_length = int(length_header)
         except ValueError as e:
             raise HTTPError(400, "Invalid Content-Length header") from e
-        if length < 0:
+        if request_length < 0:
             raise HTTPError(400, "Negative Content-Length")
-        if length > _MAX_BODY:
-            raise HTTPError(413, "Request body too large")
 
-        body = self.rfile.read(length)
-        if len(body) < length:
-            raise _ConnectionClosed
-        return body
+        accum_length = 0
+
+        def _read_body(length: int | None = None) -> bytes:
+            nonlocal accum_length
+            length_to_read = min(
+                length or request_length, request_length - accum_length
+            )
+            if length_to_read <= 0:
+                return b""
+
+            accum_length += length_to_read
+            part = self.rfile.read(length_to_read)
+            if len(part) < length_to_read:
+                raise _ConnectionClosed
+            return part
+
+        return request_length, _read_body
 
     @staticmethod
     def _keep_alive(headers: Headers) -> bool:

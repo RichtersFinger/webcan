@@ -16,16 +16,26 @@ HEAD and OPTIONS are answered automatically by the dispatch pipeline.
 """
 
 
+_MAX_CONTENT_LENGTH = 10 * 1024 * 1024
+
+
 class Handler(abc.ABC):
     """Base class for request handlers bound to a path template.
 
     Subclasses set `path` (e.g. `"/users/{user_id}"`) and override any of
     :meth:`get`, :meth:`post`, :meth:`put`, :meth:`patch`, :meth:`delete`.
     Calling unimplemented methods yields 405-error; HEAD is served via
-    :meth:`get`.
+    :meth:`get`. Custom constructors need to call base class constructor.
+
+    :param max_content_length: Upper limit for request body size.
     """
 
     path: str
+
+    def __init__(
+        self, *, max_content_length: int = _MAX_CONTENT_LENGTH, **_
+    ) -> None:
+        self.max_content_length = max_content_length
 
     @classmethod
     def implemented_methods(cls) -> set[str]:
@@ -42,10 +52,14 @@ class Handler(abc.ABC):
 
         :raises HTTPError: 405 for methods without a hook.
         """
+        if request.content_length > self.max_content_length:
+            raise HTTPError(413, "Request body too large")
+
         method = request.method.upper()
         hook_name = "get" if method == "HEAD" else method.lower()
         if method != "HEAD" and method not in ACCEPTED_METHODS:
             raise HTTPError(405)
+
         return getattr(self, hook_name)(request)
 
     def get(self, request: Request) -> Response:
@@ -80,7 +94,10 @@ class StaticHandler(Handler):
     :raises ValueError: If `target` does not exist.
     """
 
-    def __init__(self, target: Path, content_type: str | None = None):
+    def __init__(
+        self, target: Path, content_type: str | None = None, **kwargs
+    ):
+        super().__init__(**kwargs)
         if not target.exists():
             raise ValueError(f"Static target does not exist: {target}")
         self._target = target.resolve()

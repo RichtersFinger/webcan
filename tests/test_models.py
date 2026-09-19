@@ -39,12 +39,12 @@ class TestRequest(unittest.TestCase):
 
     def test_json_parses_body(self):
         """`Request.json` decodes a JSON body."""
-        request = Request(method="POST", path="/x", body=b'{"k": 1}')
+        request = Request(method="POST", path="/x", _body='{"k": 1}')
         self.assertEqual(request.json(), {"k": 1})
 
     def test_json_invalid_body_raises_400(self):
         """`Request.json` raises `HTTPError(400)` on malformed JSON."""
-        request = Request(method="POST", path="/x", body=b"not-json")
+        request = Request(method="POST", path="/x", _body="not-json")
         with self.assertRaises(HTTPError) as ctx:
             request.json()
         self.assertEqual(ctx.exception.status, 400)

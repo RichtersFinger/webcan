@@ -9,7 +9,7 @@ from __future__ import annotations
 import json
 import re
 import mimetypes
-from collections.abc import Iterable, Iterator, Mapping
+from collections.abc import Iterable, Iterator, Mapping, Callable
 from dataclasses import dataclass, field
 from functools import cached_property
 from http import HTTPStatus
@@ -119,17 +119,24 @@ class Headers(Mapping[str, str]):
         return f"Headers({dict(self.items())!r})"
 
 
-@dataclass
+@dataclass(kw_only=True)
 class Request:
-    """An incoming HTTP request (fully buffered; no streaming)."""
+    """An incoming HTTP request.
+
+    Request body is not buffered. Either read body manually through `read_body`
+    or use helpers like `body` and `json`."""
 
     method: str
     path: str
     client_ip: str = field(default_factory=lambda: "")
     query_string: str = field(default_factory=lambda: "")
     headers: Headers = field(default_factory=Headers)
-    body: bytes = field(default_factory=lambda: b"")
+    read_body: Callable[[int | None], bytes] = field(
+        default_factory=lambda: lambda length = None: b""
+    )
+    content_length: int = 0
     path_params: dict[str, str] = field(default_factory=dict)
+    _body: str | None = None
 
     @cached_property
     def query_params(self) -> dict[str, list[str]]:
@@ -152,6 +159,17 @@ class Request:
         parsed = SimpleCookie(self.headers.get("Cookie", ""))
         return {name: morsel.value for name, morsel in parsed.items()}
 
+    def body(self) -> str:
+        """Buffers and returns entire body decoded as utf-8.
+
+        Use `read_body` for manual buffering.
+
+        :return: The decoded body.
+        """
+        if self._body is None:
+            self._body = self.read_body().decode("utf-8")
+        return self._body
+
     def json(self) -> Any:
         """Returns body parsed as JSON.
 
@@ -159,7 +177,7 @@ class Request:
         :raises HTTPError: 400 if the body is not valid JSON.
         """
         try:
-            return json.loads(self.body)
+            return json.loads(self.body())
         except (ValueError, UnicodeDecodeError) as e:
             raise HTTPError(400, "Invalid JSON body") from e
 

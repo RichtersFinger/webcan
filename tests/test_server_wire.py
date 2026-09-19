@@ -6,9 +6,9 @@ import socket
 import threading
 import unittest
 
-from ..handlers import Handler
+from ..handlers import _MAX_CONTENT_LENGTH, Handler
 from ..models import Request, Response
-from ..server import _MAX_BODY, App, _AppRequestHandler, _Server
+from ..server import App, _AppRequestHandler, _Server
 
 
 _LOGGER = logging.getLogger("webcan.wire")
@@ -301,7 +301,9 @@ class TestBodyAndSmuggling(_WireTestCase):
 
     def test_oversized_body_is_413(self):
         """A Content-Length above the body cap is rejected before reading."""
-        data = self.BASE_DATA + b"Content-Length: %d\r\n\r\n" % (_MAX_BODY + 1)
+        data = self.BASE_DATA + b"Content-Length: %d\r\n\r\n" % (
+            _MAX_CONTENT_LENGTH + 1
+        )
         self.assertEqual(self._status(data), 413)
 
 

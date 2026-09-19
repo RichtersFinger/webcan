@@ -76,7 +76,8 @@ class TestClient:
             path=split.path,
             query_string=split.query,
             headers=Headers(header_items),
-            body=payload,
+            content_length=len(payload),
+            _body=payload,
         )
         response = self._app.dispatch(request)
 
