@@ -23,7 +23,7 @@ class _Ok(Handler):
         return Response.text("ok")
 
     def post(self, request: Request) -> Response:
-        return Response.text(str(len(request.body)))
+        return Response.text(str(len(request.body())))
 
 
 class _Stream(Handler):
