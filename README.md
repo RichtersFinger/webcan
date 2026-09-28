@@ -109,7 +109,6 @@ Doesn't:
 - No HTTP/2, chunked request bodies, or WebSockets
 - No async - it's all threads
 - No middleware, sessions, templating, ORM or auth
-- No streaming request bodies (requests are fully buffered)
 
 ## For developers
 
