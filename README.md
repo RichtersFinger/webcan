@@ -178,3 +178,8 @@ Run discovery from the parent directory of the package:
 ```bash
 python -m unittest discover webcan/tests -t ..
 ```
+
+Or a subset as, e.g.,
+```bash
+python -m unittest webcan.tests.test_server_wire.TestBodyAndSmuggling
+```

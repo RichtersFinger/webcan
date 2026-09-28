@@ -42,6 +42,14 @@ class TestHandlerBase(unittest.TestCase):
             _ReadWrite().handle(Request(method="DELETE", path="/things"))
         self.assertEqual(ctx.exception.status, 405)
 
+    def test_oversized_body_raises_413(self):
+        """Oversized body raises `HTTPError(413)` based on header."""
+        with self.assertRaises(HTTPError) as ctx:
+            _ReadWrite(max_content_length=1).handle(
+                Request(method="POST", path="/things", content_length=2)
+            )
+            self.assertEqual(ctx.exception.status, 413)
+
 
 class TestStaticHandler(unittest.TestCase):
     """Tests for `StaticHandler` file resolution."""

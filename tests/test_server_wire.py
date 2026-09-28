@@ -26,6 +26,13 @@ class _Ok(Handler):
         return Response.text(str(len(request.body())))
 
 
+class _Mirror(Handler):
+    path = "/mirror"
+
+    def post(self, request: Request) -> Response:
+        return Response.text(request.body())
+
+
 class _Stream(Handler):
     path = "/stream"
 
@@ -107,7 +114,7 @@ class _WireTestCase(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         app = App(log=_LOGGER, access_log=_LOGGER, error_log=_LOGGER)
-        for handler in (_Ok(), _Stream(), _Raw(), _Spoof()):
+        for handler in (_Ok(), _Mirror(), _Stream(), _Raw(), _Spoof()):
             app.register(handler)
         handler_cls = type("Bound", (_AppRequestHandler,), {"app": app})
         cls.server = _Server(("127.0.0.1", 0), handler_cls)
@@ -124,7 +131,7 @@ class _WireTestCase(unittest.TestCase):
         cls.thread.join()
 
     def _open(self) -> socket.socket:
-        sock = socket.create_connection((self.host, self.port), timeout=2)
+        sock = socket.create_connection((self.host, self.port), timeout=0.1)
         self.addCleanup(sock.close)
         return sock
 
@@ -305,6 +312,34 @@ class TestBodyAndSmuggling(_WireTestCase):
             _MAX_CONTENT_LENGTH + 1
         )
         self.assertEqual(self._status(data), 413)
+
+    def test_no_reading_beyond_size(self):
+        """Verify that the Content-Length header is parsed and used by
+        the Request object (no reading beyond specified length)."""
+        # We use the /mirror handler's POST method which returns the request body
+        # as a string.
+        body_content = b"test-data"
+        data = (
+            b"POST /mirror HTTP/1.1\r\n"
+            b"Host: localhost\r\n"
+            b"Content-Length: 4\r\n"
+            b"Connection: close\r\n\r\n" +
+            body_content
+        )
+        status, _, response_body = self._request(data)
+
+        self.assertEqual(status, 200)
+        self.assertEqual(response_body, b"test")
+
+    def test_short_read_as_connection_closed(self):
+        """A short body is handled as 'connection closed'."""
+        data = self.BASE_DATA + b"Content-Length: %d\r\n\r\n" % (
+            100
+        )
+        # the socket read (for the response) times out here because the
+        # server drops the connection and does not respond
+        with self.assertRaises(TimeoutError):
+            self._request(data)
 
 
 class TestResponseFraming(_WireTestCase):
