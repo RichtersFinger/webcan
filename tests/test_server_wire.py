@@ -115,7 +115,7 @@ class _WireTestCase(unittest.TestCase):
     def setUpClass(cls):
         app = App(log=_LOGGER, access_log=_LOGGER, error_log=_LOGGER)
         for handler in (_Ok(), _Mirror(), _Stream(), _Raw(), _Spoof()):
-            app.register(handler)
+            app.register(None, handler)
         handler_cls = type("Bound", (_AppRequestHandler,), {"app": app})
         cls.server = _Server(("127.0.0.1", 0), handler_cls)
         cls.thread = threading.Thread(

@@ -38,9 +38,9 @@ class _Teapot(Handler):
 def _make_client() -> TestClient:
     logger = logging.getLogger("webcan.test")
     app = App(log=logger, access_log=logger, error_log=logger)
-    app.register(_Echo())
-    app.register(_Exploding())
-    app.register(_Teapot())
+    app.register(None, _Echo())
+    app.register(None, _Exploding())
+    app.register(None, _Teapot())
     return TestClient(app)
 
 
@@ -50,7 +50,7 @@ class TestRegister(unittest.TestCase):
     def test_explicit_methods_restrict_registration(self):
         """`App.register` with explicit methods exposes only those methods."""
         app = App()
-        app.register(_Echo(), methods=["GET"])
+        app.register(None, _Echo(), methods=["GET"])
         response = TestClient(app).post("/echo/x", json={})
         self.assertEqual(response.status, 405)
 
@@ -61,7 +61,7 @@ class TestRegister(unittest.TestCase):
             path = "/empty"
 
         with self.assertRaises(ValueError):
-            App().register(Empty())
+            App().register(None, Empty())
 
     def test_handler_without_path_rejected(self):
         """`App.register` rejects handlers lacking a path template."""
@@ -71,7 +71,7 @@ class TestRegister(unittest.TestCase):
                 return Response.no_content()
 
         with self.assertRaises(ValueError):
-            App().register(NoPath())
+            App().register(None, NoPath())
 
     def test_instance_registration_supports_dependencies(self):
         """`App.register` accepts pre-built handler instances."""
@@ -87,8 +87,18 @@ class TestRegister(unittest.TestCase):
                 return Response.text(self._greeting)
 
         app = App()
-        app.register(Greeter("hello"))
+        app.register(None, Greeter("hello"))
         self.assertEqual(TestClient(app).get("/greet").text, "hello")
+
+    def test_url_prefix_for_path_template(self):
+        """`App.register` adds `url_prefix` to path template."""
+
+        app = App()
+        app.register("/api", _Echo())
+        client = TestClient(app)
+
+        self.assertEqual(client.get("/echo/hello").status, 404)
+        self.assertEqual(client.get("/api/echo/hello").text, "hello")
 
 
 class TestDispatch(unittest.TestCase):

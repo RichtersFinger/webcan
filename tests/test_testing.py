@@ -34,7 +34,7 @@ class TestClientBehaviour(unittest.TestCase):
 
     def setUp(self):
         app = App()
-        app.register(_Inspect())
+        app.register(None, _Inspect())
         self.client = TestClient(app)
 
     def test_query_and_headers_are_forwarded(self):
@@ -66,7 +66,7 @@ class TestClientPathHandling(unittest.TestCase):
 
     def setUp(self):
         app = App()
-        app.register(_Named())
+        app.register(None, _Named())
         self.client = TestClient(app)
 
     def test_percent_encoded_segment_is_unquoted_once(self):

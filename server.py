@@ -78,22 +78,37 @@ class App:
 
     def register(
         self,
+        url_prefix: str | None,
         handler: Handler,
         methods: Sequence[str] | None = None,
     ) -> None:
         """Register a handler class (no-arg constructed) or instance.
 
+        :param url_prefix: Optional path prefix to prepend to the handler's
+            `path` template (must start with '/'; defaults to '/').
         :param handler: `Handler` instance with a `path` template.
         :param methods: Explicit HTTP methods; `None` infers them from the
             hooks the handler implements.
-        :raises ValueError: If no methods are resolvable or a method is
-        unknown.
+        :raises ValueError: If no methods are resolvable, a method is
+            unknown, or `url_prefix` does not start with '/'.
         """
         template = getattr(handler, "path", None)
         if not template:
             raise ValueError(
                 f"{type(handler).__name__} must define a 'path' template"
             )
+
+        if url_prefix is not None:
+            if not url_prefix.startswith("/"):
+                raise ValueError(
+                    f"URL prefix must start with '/', got {url_prefix!r}"
+                )
+            prefix = url_prefix.rstrip("/")
+            # Avoid a double slash if template is '/' or starts with '/'
+            if template.startswith("/"):
+                template = f"{prefix}{template}"
+            else:
+                template = f"{prefix}/{template}"
 
         if methods is not None:
             selected = sorted(m.upper() for m in methods)
