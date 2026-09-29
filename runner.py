@@ -2,8 +2,7 @@
 
 The supervisor re-executes the current command (`sys.executable sys.argv`)
 in a child process marked by an environment variable; the parent polls file
-modification times and restarts the child on change. This is robust against
-import caching, unlike in-process module reloading.
+modification times and restarts the child on change.
 """
 
 from __future__ import annotations
@@ -13,7 +12,7 @@ import logging
 import os
 import subprocess
 import sys
-import time
+from threading import Event, Thread
 from collections.abc import Sequence
 from pathlib import Path
 
@@ -25,18 +24,19 @@ logger = logging.getLogger(__name__)
 
 _RELOAD_CHILD_ENV = "WEBCAN_RELOAD_CHILD"
 _TERMINATE_TIMEOUT_SECONDS = 5.0
-# TODO: make file-watching explicit instead (accepts arguments for what to
-# watch)
-_SKIP_DIR_NAMES = {"__pycache__", "node_modules", "venv"}
+SKIP_HOT_RELOAD_IN = {
+    "__pycache__",
+    "venv",
+    ".venv",
+    ".tox",
+    "node_modules",
+    ".git",
+}
+"""Directories in which the dev-running hot-reload is disabled by default."""
 
 
 def load_app(app_target: str) -> App:
-    """Import and return an :class:`App` from a `"module:attribute"` target.
-
-    :param app_target: Import target, e.g. `"main:app"`.
-    :raises ValueError: If the target string is malformed.
-    :raises TypeError: If the attribute is not an :class:`App` instance.
-    """
+    """Import and return an :class:`App` from a `"module:attribute"` target."""
     module_name, _, attribute = app_target.partition(":")
     if not module_name or not attribute:
         raise ValueError(
@@ -53,12 +53,12 @@ def load_app(app_target: str) -> App:
 
 def run_dev(
     app_target: str,
-    host: str = "127.0.0.1",
+    host: str | None = None,
     port: int = 8000,
     *,
     reload: bool = True,
-    watch_dirs: Sequence[Path] | None = None,
-    poll_interval: float = 0.5,
+    watch_paths: Sequence[Path | str] | None = None,
+    poll_interval: float = 1.0,
 ) -> None:
     """Run the app for development, optionally restarting on source changes.
 
@@ -67,33 +67,49 @@ def run_dev(
     :param app_target: Import target, e.g. `"main:app"`.
     :param host: Bind address.
     :param port: Bind port.
-    :param reload: Enable the file watcher and process restarts.
-    :param watch_dirs: Directories to watch for `.py` changes; defaults to CWD.
-    :param poll_interval: Seconds between watcher polls.
-    """
+    :param reload: Enable the .py-file watcher and process restarts.
+    :param watch_paths: Files and directories to watch for changes.
+    :param poll_interval: Seconds between watcher polls."""
+
+    host = os.environ.get("WEBCAN_HOST", host or "127.0.0.1")
+    port = int(os.environ.get("WEBCAN_PORT", port))
+
     is_child = os.environ.get(_RELOAD_CHILD_ENV) == "1"
     if not reload or is_child:
         load_app(app_target).run(host, port)
         return
 
-    directories = tuple(Path(d) for d in (watch_dirs or [Path.cwd()]))
-    _supervise(directories, poll_interval)
+    if watch_paths is None:
+        raise ValueError(
+            "Hot reload enabled but no paths to watch, call 'run_dev' with "
+            "explicit 'watch_paths' kwarg."
+        )
+
+    paths = tuple(Path(p) for p in (watch_paths))
+    _supervise(host, port, paths, poll_interval)
 
 
-def _supervise(directories: Sequence[Path], poll_interval: float) -> None:
+def _supervise(host: str, port: int, paths: Sequence[Path], poll_interval: float) -> None:
     logger.info(
         "Hot reload active; watching: %s",
-        ", ".join(str(d) for d in directories),
+        ", ".join(str(p) for p in paths),
     )
-    process = _spawn_child()
+
+    manual_reload = Event()
+    def _listen_for_enter():
+        print("Press 'Return' to manually reload.")
+        for _ in sys.stdin:
+            manual_reload.set()
+
+    Thread(target=_listen_for_enter, daemon=True).start()
+
+    process = _spawn_child(host, port)
     try:
         while True:
-            changed = _wait_for_change(process, directories, poll_interval)
-            if changed is None:
-                sys.exit(process.returncode)
-            logger.info("Change detected in %s; restarting server", changed)
+            reason = _wait_for_change(paths, poll_interval, manual_reload)
+            logger.info("Restarting server; Reason: %s \n\n---\n", reason)
             _terminate(process)
-            process = _spawn_child()
+            process = _spawn_child(host, port)
     except KeyboardInterrupt:
         logger.info("Stopping dev server")
     finally:
@@ -101,39 +117,50 @@ def _supervise(directories: Sequence[Path], poll_interval: float) -> None:
 
 
 def _wait_for_change(
-    process: subprocess.Popen[bytes],
-    directories: Sequence[Path],
+    paths: Sequence[Path],
     poll_interval: float,
-) -> Path | None:
-    """Block until a watched file changes (returns it) or the child exits (returns None)."""
-    baseline = _snapshot(directories)
+    manual_reload: Event,
+) -> str:
+    """Block until a watched file changes (returns reason for reload)."""
+    baseline = _snapshot(paths)
     while True:
-        time.sleep(poll_interval)
-        if process.poll() is not None:
-            return None
-        changed = _first_difference(baseline, _snapshot(directories))
+        if manual_reload.wait(poll_interval):
+            manual_reload.clear()
+            return "manual trigger"
+
+        changed = _first_difference(baseline, _snapshot(paths))
         if changed is not None:
-            return changed
+            return f"file '{changed}' changed"
 
 
-def _snapshot(directories: Sequence[Path]) -> dict[Path, float]:
-    """Map every watched `.py` file to its mtime, pruning irrelevant directories."""
+def _snapshot(paths: Sequence[Path]) -> dict[Path, float]:
+    """Map every watched file to its mtime, pruning irrelevant directories."""
     mtimes: dict[Path, float] = {}
-    for directory in directories:
-        for root, dirnames, filenames in os.walk(directory):
-            dirnames[:] = [
-                n
-                for n in dirnames
-                if n not in _SKIP_DIR_NAMES and not n.startswith(".")
-            ]
-            for filename in filenames:
-                if not filename.endswith(".py"):
-                    continue
-                path = Path(root) / filename
+    for path in paths:
+        if path.is_file():
+            try:
+                mtimes[path] = path.stat().st_mtime
+            except OSError:
+                pass
+        elif path.is_dir():
+            stack = [path]
+            while stack:
+                current = stack.pop()
                 try:
-                    mtimes[path] = path.stat().st_mtime
+                    for p in current.iterdir():
+                        if (
+                            p.is_dir()
+                            and not p.is_symlink()
+                            and p.name not in SKIP_HOT_RELOAD_IN
+                        ):
+                            stack.append(p)
+                        elif p.is_file() and p.suffix.lower() == ".py":
+                            try:
+                                mtimes[p] = p.stat().st_mtime
+                            except OSError:
+                                pass
                 except OSError:
-                    continue  # file vanished between listing and stat
+                    pass
     return mtimes
 
 
@@ -149,8 +176,13 @@ def _first_difference(
     return None
 
 
-def _spawn_child() -> subprocess.Popen[bytes]:
-    env = {**os.environ, _RELOAD_CHILD_ENV: "1"}
+def _spawn_child(host: str, port: int) -> subprocess.Popen[bytes]:
+    env = {
+        **os.environ,
+        _RELOAD_CHILD_ENV: "1",
+        "WEBCAN_HOST": host,
+        "WEBCAN_PORT": str(port),
+    }
     return subprocess.Popen([sys.executable, *sys.argv], env=env)
 
 

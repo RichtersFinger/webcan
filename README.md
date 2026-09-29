@@ -72,9 +72,7 @@ def create_app() -> App:
     )  # inferred: GET, POST (+ automatic HEAD/OPTIONS)
     app_.register(UserHandler())  # inferred: GET, DELETE
 
-    static_dir = Path("public")
-    if static_dir.is_dir():
-        app_.serve_static("/static", static_dir)
+    app_.serve_static("/", Path("public"))
     return app_
 
 
@@ -88,7 +86,7 @@ if __name__ == "__main__":
     )
     # Dev entry point with hot reload; use app.run(host, port) directly
     # in production.
-    run_dev("main:app", port=8000, reload=True)
+    run_dev("main:app", port=8000, reload=True, watch_paths=["main.py"])
     # app.run(host="0.0.0.0", port=8000)
 ```
 
