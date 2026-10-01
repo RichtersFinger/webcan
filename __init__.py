@@ -1,9 +1,4 @@
-"""WebCan: a minimal, stdlib-only, threaded HTTP mini-framework.
-
-Public surface: :class:`App`, :class:`Handler`, :class:`StaticHandler`,
-:class:`Request`, :class:`Response`, :class:`Headers`, :class:`HTTPError`,
-:class:`TestClient`, :class:`TestResponse`, :func:`run_dev`, :func:`load_app`.
-"""
+"""WebCan: a minimal, stdlib-only, threaded HTTP mini-framework."""
 
 from .handlers import Handler, StaticHandler
 from .models import Headers, HTTPError, Request, Response
