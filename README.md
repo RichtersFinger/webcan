@@ -1,6 +1,8 @@
+ ![Tests](https://github.com/RichtersFinger/webcan/actions/workflows/tests.yml/badge.svg?branch=main)
+
 # WebCan
 
-Minimal, stdlib-only, threaded HTTP micro-framework. Zero runtime dependencies.
+Minimal, stdlib-only, threaded HTTP micro-framework. Zero runtime dependencies and easy to use as git submodule/drop-in package.
 
 ## Usage as a git submodule
 
@@ -8,7 +10,7 @@ The repository root is the package; internal imports are relative, so the
 import name equals the submodule directory name:
 
 ```bash
-git submodule add <repo-url> webcan
+git submodule add https://github.com/RichtersFinger/webcan webcan
 ```
 
 
@@ -69,8 +71,8 @@ def create_app() -> App:
     app_ = App()
     app_.register(
         UserListHandler()
-    )  # inferred: GET, POST (+ automatic HEAD/OPTIONS)
-    app_.register(UserHandler())  # inferred: GET, DELETE
+    )
+    app_.register(UserHandler())
 
     app_.serve_static("/", Path("public"))
     return app_
@@ -99,13 +101,14 @@ Offers:
 - JSON / text / redirect / file responses, streamed bodies
 - Static file serving with ETag, Last-Modified, conditional GET and byte ranges
 - Strict request parsing (rejects chunked bodies, header folding, oversized input)
-- Hot-reload dev server and a socket-free test client
+- Hot-reload dev server
+- a socket-free test client
 - Zero runtime dependencies
 
 Doesn't:
 - No HTTPS/TLS (put it behind a reverse proxy)
-- No HTTP/2, chunked request bodies, or WebSockets
-- No async - it's all threads
+- No HTTP/2 or WebSockets
+- No async
 - No middleware, sessions, templating, ORM or auth
 
 ## For developers
@@ -114,23 +117,27 @@ Here is a quick tour:
 
 ### The building blocks
 
-- **`models.py`**, the HTTP primitives.
-  `Request` and `Response` (both `dataclass`es), a case-insensitive read-only `Headers`-mapping, and `HTTPError` for signalling error responses.
-  `Response` has convenience builders (`.text`, `.json`, `.file`, `.redirect`, `.no_content`) and knows how to stream its body (`bytes`, `str`, `Path`, or an iterator of chunks).
-- **`handlers.py`**, `Handler` is the base class you subclass.
-  You set a `path` template and override `get`/`post`/`put`/`patch`/`delete` (unimplemented ones return 405).
-  `StaticHandler` ships built-in and serves files or directory trees, including conditional GET (ETag / Last-Modified) and single byte-range requests.
-- **`routing.py`**, `Route` compiles a path template like `/users/{user_id}` into a regex.
-  `Router` keeps the registry and resolves a path to a `RoutingResult` (handlers-by-method + extracted path params).
-  First matching route wins, by insertion order.
-- **`server.py`**, wiring: `App` ties registration, routing and dispatch together.
-  `_AppRequestHandler` is the strict HTTP/1.1 parser that talks to the socket; `_Server` is a threaded TCP server.
-  All of the wire-level logic (parsing, header writing, connection handling) is done in `_AppRequestHandler`.
-  Anything sketchy (chunked bodies, header folding, oversized lines) gets rejected.
-- **`runner.py`**, contains `load_app("module:attr")` and the hot-reload dev supervisor.
-  Reloading works by re-spawning the process as a child.
+- **`models.py`**, HTTP "primitives"
+  - `Request`, `Response`,`Headers`, and `HTTPError`
+  - essentially these are data records with a bit of convenience like `JSON`-handling.
+- **`handlers.py`**
+  - a `Handler` describes an API-resource.
+  - defines a path template `path`
+  - defines all required HTTP verbs `GET`, `POST`, .. (overriding methods `get`, `post`, ...)
+  - `StaticHandler` is a built-in handler to serve files or directory trees, including conditional `GET` (ETag / Last-Modified) and single byte-range requests.
+- **`routing.py`**
+  - `Route` compiles a path template like `/users/{user_id}` into a regex.
+  - `Router` keeps the registry and resolves a path to a `RoutingResult` (handlers-by-method + extracted path params).
+  - First matching route wins, by insertion order.
+- **`server.py`**, wiring:
+  - `App` ties registration, routing and dispatch together.
+  - internal `_AppRequestHandler` is the strict HTTP/1.1 parser that sits directly at the socket; all of the wire-level logic (parsing, header writing, connection handling) is done here
+  - `_Server` is a threaded TCP server
+- **`runner.py`**
+  - contains `load_app("module:attr")` and the hot-reload dev supervisor (through `run_dev`).
+  - reloading works by re-spawning the process as a child passing along settings as environment variables
 - **`testing.py`**, `TestClient` drives an `App` through `dispatch` directly, no sockets involved.
-  Intended for fast, deterministic tests.
+  Intended for fast, deterministic tests of the app's handler-wiring.
 
 ### Runtime view: a normal request
 
@@ -159,10 +166,10 @@ _AppRequestHandler.handle()          # loops per keep-alive connection
                  └─ _write_body()    -> Response.iter_body() chunks
 ```
 
-The important bits:
+Note:
 
-- `dispatch` is the "never raises" boundary.
-  An `HTTPError` becomes a plain-text response; anything else becomes a logged 500.
+- `dispatch` is the boundary for broadly catching exceptions:
+  An `HTTPError` becomes a plain-text response and anything else is logged as 500.
   Either way the caller always gets a `Response`.
 - The parser decides `keep_alive` up front; `_handle_one` returns whether to loop again.
 - HEAD is routed to the `get` hook but the body is suppressed at write time.
@@ -179,4 +186,13 @@ python -m unittest discover webcan/tests -t ..
 Or a subset as, e.g.,
 ```bash
 python -m unittest webcan.tests.test_server_wire.TestBodyAndSmuggling
+```
+
+Or use Docker through the provided `Makefile` target `test`.
+
+### Building
+
+Run the build in Docker with
+```bash
+make build
 ```
