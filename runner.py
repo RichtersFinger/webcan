@@ -13,7 +13,7 @@ import os
 import subprocess
 import sys
 from threading import Event, Thread
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from pathlib import Path
 
 from .server import App
@@ -51,8 +51,19 @@ def load_app(app_target: str) -> App:
     return app
 
 
+AppTarget = App | Callable[[], App] | str
+
+
+def _resolve(target: AppTarget) -> App:
+    if isinstance(target, App):
+        return target
+    if isinstance(target, str):
+        return load_app(target)
+    return target()
+
+
 def run_dev(
-    app_target: str,
+    target: AppTarget,
     host: str | None = None,
     port: int = 8000,
     *,
@@ -62,9 +73,8 @@ def run_dev(
 ) -> None:
     """Run the app for development, optionally restarting on source changes.
 
-    With `reload=False` this is equivalent to `load_app(...).run(...)`.
-
-    :param app_target: Import target, e.g. `"main:app"`.
+    :param target: target app as either an `App` instance, a factory, or
+        import target, e.g. `"main:app"`.
     :param host: Bind address.
     :param port: Bind port.
     :param reload: Enable the .py-file watcher and process restarts.
@@ -74,9 +84,8 @@ def run_dev(
     host = os.environ.get("WEBCAN_HOST", host or "127.0.0.1")
     port = int(os.environ.get("WEBCAN_PORT", port))
 
-    is_child = os.environ.get(_RELOAD_CHILD_ENV) == "1"
-    if not reload or is_child:
-        load_app(app_target).run(host, port)
+    if not reload or os.environ.get(_RELOAD_CHILD_ENV) == "1":
+        _resolve(target).run(host, port)
         return
 
     if watch_paths is None:
@@ -89,13 +98,16 @@ def run_dev(
     _supervise(host, port, paths, poll_interval)
 
 
-def _supervise(host: str, port: int, paths: Sequence[Path], poll_interval: float) -> None:
-    logger.info(
+def _supervise(
+    host: str, port: int, paths: Sequence[Path], poll_interval: float
+) -> None:
+    logger.warning(
         "Hot reload active; watching: %s",
         ", ".join(str(p) for p in paths),
     )
 
     manual_reload = Event()
+
     def _listen_for_enter():
         print("Press 'Return' to manually reload.")
         for _ in sys.stdin:
@@ -107,11 +119,11 @@ def _supervise(host: str, port: int, paths: Sequence[Path], poll_interval: float
     try:
         while True:
             reason = _wait_for_change(paths, poll_interval, manual_reload)
-            logger.info("Restarting server; Reason: %s \n\n---\n", reason)
+            logger.warning("Restarting server; Reason: %s \n\n---\n", reason)
             _terminate(process)
             process = _spawn_child(host, port)
     except KeyboardInterrupt:
-        logger.info("Stopping dev server")
+        logger.warning("Stopping dev server")
     finally:
         _terminate(process)
 

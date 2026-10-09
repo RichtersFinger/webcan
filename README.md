@@ -88,7 +88,7 @@ if __name__ == "__main__":
     )
     # Dev entry point with hot reload; use app.run(host, port) directly
     # in production.
-    run_dev("main:app", port=8000, reload=True, watch_paths=["main.py"])
+    run_dev(app, port=8000, reload=True, watch_paths=["main.py"])
     # app.run(host="0.0.0.0", port=8000)
 ```
 
