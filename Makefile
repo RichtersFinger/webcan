@@ -7,8 +7,8 @@ shell:
 test:
 	${PYTHON} sh -c "cd .. && python -m unittest discover webcan/tests -t .."
 
-build:
-	${PYTHON} sh -c "pip install --uploaded-prior-to P14D 'build==1.6.1' && python -m build --wheel"
+build: clean
+	${PYTHON} sh -c "pip install --uploaded-prior-to P14D 'build==1.6.1' && python -m build --wheel && rm -rf build/"
 
 clean:
 	rm -rf __pycache__ **/__pycache__ webcan.egg-info build dist
