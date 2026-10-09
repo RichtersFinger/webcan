@@ -3,11 +3,12 @@
 import logging
 import tempfile
 import unittest
+from unittest import mock
 from pathlib import Path
 
 from ..handlers import Handler
 from ..models import HTTPError, Request, Response
-from ..server import App
+from ..server import App, _Server
 from ..testing import TestClient
 
 
@@ -188,3 +189,32 @@ class TestServeStatic(unittest.TestCase):
         """`App.serve_static` requires an absolute URL prefix."""
         with self.assertRaises(ValueError):
             App().serve_static("static", self.tmp_path)
+
+
+class TestLifecycleCallbacks(unittest.TestCase):
+    """Test `on_startup`/`on_shutdown` callbacks of `App.run`."""
+
+    _LOGGER = logging.getLogger("webcan.wire")
+    _LOGGER.addHandler(logging.NullHandler())
+    _LOGGER.propagate = False
+
+    def _run(self, app: App) -> None:
+        with mock.patch.object(
+            _Server, "serve_forever", side_effect=KeyboardInterrupt
+        ), mock.patch.object(_Server, "shutdown"):
+            app.run("127.0.0.1", 0)
+
+    def test_callbacks_run_in_order_with_app(self):
+        """`App.run` calls startup, then shutdown, each with the app."""
+        events = []
+        app = App(
+            log=self._LOGGER,
+            on_startup=lambda a: events.append(("startup", a)),
+            on_shutdown=lambda a: events.append(("shutdown", a)),
+        )
+        self._run(app)
+        self.assertEqual(events, [("startup", app), ("shutdown", app)])
+
+    def test_defaults_are_noops(self):
+        """`App.run` works without callbacks."""
+        self._run(App(log=self._LOGGER))

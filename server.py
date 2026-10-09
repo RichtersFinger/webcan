@@ -62,6 +62,10 @@ class App:
         'webcan.access'
     :param error_log: Logger for server error logging; defaults to
         'webcan.error'
+    :param on_startup: Callback for server startup (called immediately
+        before starting to serve).
+    :param on_shutdown: Callback for server shutdown (called after server
+        has been stopped).
     """
 
     def __init__(
@@ -70,11 +74,27 @@ class App:
         log: logging.Logger | None = None,
         access_log: logging.Logger | None = None,
         error_log: logging.Logger | None = None,
+        on_startup: Callable[["App"], None] | None = None,
+        on_shutdown: Callable[["App"], None] | None = None,
     ):
         self.log = log or logging.getLogger("webcan")
         self.access_log = access_log or logging.getLogger("webcan.access")
         self.error_log = error_log or logging.getLogger("webcan.error")
+        self._on_startup: Callable[["App"], None] = on_startup or (
+            lambda _: None
+        )
+        self._on_shutdown: Callable[["App"], None] = on_shutdown or (
+            lambda _: None
+        )
         self._router = Router()
+
+    def set_on_startup(self, callback: Callable[["App"], None]) -> None:
+        """Overwrite on-startup callback."""
+        self._on_startup = callback
+
+    def set_on_shutdown(self, callback: Callable[["App"], None]) -> None:
+        """Overwrite on-shutdown callback."""
+        self._on_shutdown = callback
 
     def register(
         self,
@@ -178,7 +198,11 @@ class App:
             request.method,
             request.path,
             response.status,
-            response.content_length() if response.content_length() is not None else "-",
+            (
+                response.content_length()
+                if response.content_length() is not None
+                else "-"
+            ),
             duration_ms,
             request.headers.get("Host", "-"),
             request.headers.get("User-Agent", "-"),
@@ -192,16 +216,23 @@ class App:
             "BoundRequestHandler", (_AppRequestHandler,), {"app": self}
         )
         with _Server((host, port), handler_cls) as server:
+            self._on_startup(self)
             self.log.info("Serving on http://%s:%d", host, port)
             try:
                 server.serve_forever()
             except KeyboardInterrupt:
-                self.log.info("Shutting down (Ctrl-C again to force)")
+                self.log.warning("Shutting down (Ctrl-C again to force)")
             finally:
                 try:
                     server.shutdown()
                 except KeyboardInterrupt:
                     self.log.warning("Forced shutdown")
+                finally:
+                    try:
+                        self._on_shutdown(self)
+                    # pylint: disable=broad-exception-caught
+                    except Exception:
+                        self.error_log.exception("Shutdown callback failed")
 
     def _handle(self, request: Request) -> Response:
         resolution = self._router.resolve(request.path)
