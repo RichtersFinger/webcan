@@ -10,6 +10,9 @@ The repository root is the package; internal imports are relative, so the
 import name equals the submodule directory name:
 
 ```bash
+# ssh
+git submodule add git@github.com:RichtersFinger/webcan.git webcan
+# http
 git submodule add https://github.com/RichtersFinger/webcan webcan
 ```
 
