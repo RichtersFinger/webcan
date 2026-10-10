@@ -4,7 +4,7 @@ pipeline, and the threaded server.
 
 import logging
 import re
-from collections.abc import Sequence, Callable
+from collections.abc import Callable
 from http import HTTPStatus
 from pathlib import Path
 from socketserver import ThreadingTCPServer, StreamRequestHandler
@@ -100,15 +100,12 @@ class App:
         self,
         url_prefix: str | None,
         handler: Handler,
-        methods: Sequence[str] | None = None,
     ) -> None:
         """Register a handler class (no-arg constructed) or instance.
 
         :param url_prefix: Optional path prefix to prepend to the handler's
             `path` template (must start with '/'; defaults to '/').
         :param handler: `Handler` instance with a `path` template.
-        :param methods: Explicit HTTP methods; `None` infers them from the
-            hooks the handler implements.
         :raises ValueError: If no methods are resolvable, a method is
             unknown, or `url_prefix` does not start with '/'.
         """
@@ -130,22 +127,13 @@ class App:
             else:
                 template = f"{prefix}/{template}"
 
-        if methods is not None:
-            selected = sorted(m.upper() for m in methods)
-            missing = set(selected) - handler.implemented_methods()
-            if missing:
-                raise ValueError(
-                    f"{type(handler).__name__} does not implement "
-                    f"{sorted(missing)}"
-                )
-        else:
-            selected = sorted(handler.implemented_methods())
-        if not selected:
+        methods = sorted(handler.implemented_methods())
+        if not methods:
             raise ValueError(
                 f"{type(handler).__name__} implements no HTTP methods"
             )
 
-        for method in selected:
+        for method in methods:
             self._router.add(method, template, handler)
 
     def serve_static(self, url_prefix: str, target: Path) -> None:
@@ -154,6 +142,9 @@ class App:
         A file is served at exactly `url_prefix`; a directory is mounted so
         that `{url_prefix}/relative/path` maps into its tree.
 
+        :param url_prefix: Optional path prefix to prepend to the handler's
+            `path` template (must start with '/'; defaults to '/').
+        :param target: Path to the target file/directory to serve.
         :raises ValueError: If the prefix is not absolute or `target` is
         missing.
         """

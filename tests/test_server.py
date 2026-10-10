@@ -48,13 +48,6 @@ def _make_client() -> TestClient:
 class TestRegister(unittest.TestCase):
     """Test `Handler` registration."""
 
-    def test_explicit_methods_restrict_registration(self):
-        """`App.register` with explicit methods exposes only those methods."""
-        app = App()
-        app.register(None, _Echo(), methods=["GET"])
-        response = TestClient(app).post("/echo/x", json={})
-        self.assertEqual(response.status, 405)
-
     def test_handler_without_hooks_rejected(self):
         """`App.register` rejects handlers that implement no HTTP method."""
 
