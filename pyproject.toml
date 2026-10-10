@@ -1,6 +1,6 @@
 [project]
 name = "webcan"
-version = "0.2.0"
+version = "0.3.0"
 description = "Minimal stdlib-only threaded HTTP server"
 requires-python = ">=3.10"
 dependencies = []

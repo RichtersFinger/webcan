@@ -72,9 +72,7 @@ class UserHandler(Handler):
 def create_app() -> App:
     """Build and configure the demo application."""
     app_ = App()
-    app_.register(
-        UserListHandler()
-    )
+    app_.register(UserListHandler())
     app_.register(UserHandler())
 
     app_.serve_static("/", Path("public"))
