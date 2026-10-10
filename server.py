@@ -160,6 +160,16 @@ class App:
         )
         self._router.add("GET", template, handler)
 
+    def fallback(self, handler: Handler) -> None:
+        """Serve `handler` as fallback if no other route matches."""
+        methods = sorted(handler.implemented_methods())
+        if not methods:
+            raise ValueError(
+                f"{type(handler).__name__} implements no HTTP methods"
+            )
+
+        self._router.set_fallback(handler, methods)
+
     def dispatch(self, request: Request) -> Response:
         """Run the full request pipeline; never raises.
 

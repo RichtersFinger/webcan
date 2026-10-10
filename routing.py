@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 from urllib.parse import unquote
 from dataclasses import dataclass
+from collections.abc import Sequence
 
 from .models import HTTPError
 from .handlers import ACCEPTED_METHODS, Handler
@@ -112,6 +113,11 @@ class Router:
     def __init__(self) -> None:
         self._routes: list[Route] = []
         self._handlers: dict[str, dict[str, Handler]] = {}
+        self._fallback: dict[str, Handler] = {}
+
+    def set_fallback(self, handler: Handler, methods: Sequence[str]) -> None:
+        """Handler used when no route matches."""
+        self._fallback = {m.upper(): handler for m in methods}
 
     def add(self, method: str, template: str, handler: Handler) -> None:
         """Register `Handler` for HTTP-`method` on path `template`.
@@ -150,4 +156,6 @@ class Router:
                     handlers=self._handlers[route.template],
                     path_params=params,
                 )
+        if self._fallback:
+            return RoutingResult(self._fallback, {})
         raise HTTPError(404)

@@ -95,6 +95,34 @@ class TestRegister(unittest.TestCase):
         self.assertEqual(client.get("/api/echo/hello").text, "hello")
 
 
+class TestFallback(unittest.TestCase):
+    """Test fallback-`Handler` registration."""
+
+    def test_404s_without_fallback(self):
+        """No matching `Handler` results in 404."""
+        app = App()
+        app.register("/api", _Echo())
+        client = TestClient(app)
+
+        self.assertEqual(client.get("/echo/hello").status, 404)
+
+    def test_serves_fallback(self):
+        """`App.fallback` is served as fallback."""
+
+        class Fallback(Handler):
+            path = "/"
+
+            def get(self, request: Request) -> Response:
+                return Response.text("OK")
+
+        app = App()
+        app.register("/api", _Echo())
+        app.fallback(Fallback())
+        client = TestClient(app)
+
+        self.assertEqual(client.get("/echo/hello").status, 200)
+
+
 class TestDispatch(unittest.TestCase):
     """Test `App.dispatch`."""
 
@@ -192,9 +220,12 @@ class TestLifecycleCallbacks(unittest.TestCase):
     _LOGGER.propagate = False
 
     def _run(self, app: App) -> None:
-        with mock.patch.object(
-            _Server, "serve_forever", side_effect=KeyboardInterrupt
-        ), mock.patch.object(_Server, "shutdown"):
+        with (
+            mock.patch.object(
+                _Server, "serve_forever", side_effect=KeyboardInterrupt
+            ),
+            mock.patch.object(_Server, "shutdown"),
+        ):
             app.run("127.0.0.1", 0)
 
     def test_callbacks_run_in_order_with_app(self):
